@@ -16,3 +16,5 @@ NOTAS:
 - Para seguridad real, validar las funciones y políticas SQL existentes antes de producción; esta versión es de pruebas.
 - El menú 'Historial' permite ver cuentas en cero.
 - El administrador y operador tienen funciones de registro; anulación administrativa no incluida en V1.0.
+
+V1.1: El formulario de nuevo cliente está oculto inicialmente y se abre con el botón Nuevo cliente. La lista muestra por defecto solo clientes con saldo positivo, ordenados por deuda descendente. Al buscar se muestran también los clientes sin deuda. No se modificaron los procedimientos RPC ni la base de datos.
