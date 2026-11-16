@@ -18,3 +18,11 @@ NOTAS:
 - El administrador y operador tienen funciones de registro; anulación administrativa no incluida en V1.0.
 
 V1.1: El formulario de nuevo cliente está oculto inicialmente y se abre con el botón Nuevo cliente. La lista muestra por defecto solo clientes con saldo positivo, ordenados por deuda descendente. Al buscar se muestran también los clientes sin deuda. No se modificaron los procedimientos RPC ni la base de datos.
+
+V1.2:
+- IMPORTANTE: Antes de usar Administración, ejecutar INSTALAR_V1_2.sql en SQL Editor de Supabase.
+- El rol en perfiles debe ser 'admin' (sin distinguir mayúsculas). Si tu rol tiene otra denominación, verificarlo antes de instalar.
+- Administración: editar nombre, teléfono, observación; eliminar cliente y todos sus movimientos con doble confirmación. Es irreversible; respaldar antes de borrar datos reales.
+- Créditos: varias líneas de productos con cantidad y precio unitario. Se guardan como UN movimiento con detalle textual (máximo 300 caracteres), sin cambiar las tablas existentes. Para créditos extensos, dividir operaciones. No es inventario.
+- Cancelar abandona el formulario sin guardar. El selector muestra solo el nombre. El listado destaca saldos en rojo.
+- No se ejecutó una prueba contra tu Supabase de producción. Prueba primero con un cliente ficticio.
