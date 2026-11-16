@@ -53,7 +53,18 @@ function movementView(type,selected){
  };
 }
 async function record({id,type,amount,medio,detalle}){await action(async()=>{const {error}=await db.rpc('registrar_movimiento',{p_cliente_id:id,p_tipo:type,p_monto:amount,p_medio_pago:medio,p_solicitud_id:crypto.randomUUID(),p_detalle:detalle||null});if(error)throw error;await refresh();msg('Movimiento guardado correctamente',true);openClient(id)})}
-function openClient(id){const c=clients.find(x=>x.id===id);if(!c)return;currentView='history';const rows=moves.filter(x=>x.cliente_id===id),balance=balances.get(id)||0;$('view').innerHTML=`<button class="light" id="back">← Clientes</button><h2>${esc(c.nombre)}</h2><div class="bigmoney">${money(balance)}</div><div class="bar"><button id="addCredit">➕ Crédito</button><button id="addPayment" ${balance<=0?'disabled':''}>💵 Abono</button></div><div class="bar" style="margin-top:8px"><button class="danger" id="cancelAll" ${balance<=0?'disabled':''}>✅ CANCELAR DEUDA TOTAL</button><button class="light" id="pdf">📄 Estado de cuenta</button></div><h3>Movimientos (${rows.length})</h3><div id="records"></div>`;$('records').innerHTML=rows.slice().reverse().map(m=>`<div class="record"><b>${esc(m.tipo)}</b> · <span class="amount">${m.tipo==='CREDITO'?'+':'−'} ${money(m.monto)}</span><small>${new Date(m.fecha).toLocaleString('es-PE')}${m.detalle?' · '+esc(m.detalle):''}</small></div>`).join('')||'<p class="muted">Sin movimientos.</p>';$('back').onclick=()=>{currentView='clients';render()};$('addCredit').onclick=()=>{currentView='credit';movementView('CREDITO',id)};$('addPayment').onclick=()=>{currentView='payment';movementView('ABONO',id)};$('cancelAll').onclick=()=>cancelDialog(id);$('pdf').onclick=()=>exportPdf(c,rows,balance)}
+function saleLines(detail){
+ const parts=String(detail||'').split(/\s*\|\s*/).filter(Boolean);
+ return parts.map(part=>{const m=part.match(/^(.*?):\s*S\/\s*([0-9]+(?:[.,][0-9]{1,2})?)\s*$/i);return m?{name:m[1].trim(),price:Number(m[2].replace(',','.'))}:{name:part,price:null}});
+}
+function movementCard(m){
+ const credit=m.tipo==='CREDITO',date=new Date(m.fecha).toLocaleString('es-PE');
+ const lines=credit?saleLines(m.detalle):[];
+ const detail=credit&&lines.length?`<div class="receipt-lines">${lines.map(l=>`<div class="receipt-line"><span>${esc(l.name)}</span><span>${l.price===null?'':money(l.price)}</span></div>`).join('')}</div>`:m.detalle?`<div class="muted">${esc(m.detalle)}</div>`:'';
+ return `<article class="receipt"><div class="receipt-head"><strong>${credit?'COMPRA':esc(m.tipo)}</strong><time>${esc(date)}</time></div>${detail}<div class="receipt-total"><strong>${credit?'Total compra':'Abono'}</strong><strong class="${credit?'':'payment-amount'}">${credit?'':'− '}${money(m.monto)}</strong></div></article>`;
+}
+function openClient(id){const c=clients.find(x=>x.id===id);if(!c)return;currentView='history';const rows=moves.filter(x=>x.cliente_id===id),balance=balances.get(id)||0;$('view').innerHTML=`<button class="light" id="back">← Clientes</button><h2>${esc(c.nombre)}</h2><div class="bigmoney">${money(balance)}</div><div class="bar"><button id="addCredit">➕ Crédito</button><button id="addPayment" ${balance<=0?'disabled':''}>💵 Abono</button></div><div class="bar" style="margin-top:8px"><button class="danger" id="cancelAll" ${balance<=0?'disabled':''}>✅ CANCELAR DEUDA TOTAL</button><button class="light" id="pdf">📄 Estado de cuenta</button></div><h3>Movimientos (${rows.length})</h3><div id="records"></div>`;$('records').innerHTML=rows.slice().reverse().map(movementCard).join('')||'<p class="muted">Sin movimientos.</p>';$('back').onclick=()=>{currentView='clients';render()};$('addCredit').onclick=()=>{currentView='credit';movementView('CREDITO',id)};$('addPayment').onclick=()=>{currentView='payment';movementView('ABONO',id)};$('cancelAll').onclick=()=>cancelDialog(id);$('pdf').onclick=()=>exportPdf(c,rows,balance)}
+
 function adminView(){
  if(String(profile?.rol).toLowerCase()!=='admin'){currentView='clients';render();return}
  const v=$('view');v.innerHTML=`<h2>⚙️ Configuración del operador</h2><p class="muted">Los cambios se guardan en Supabase y se aplican al operador al actualizar o navegar.</p><label class="setting-row"><span>Mostrar búsqueda de clientes</span><input type="checkbox" id="settingSearch" ${operatorSettings.busqueda_clientes?'checked':''}></label><label class="setting-row"><span>Mostrar Historial general</span><input type="checkbox" id="settingHistory" ${operatorSettings.historial?'checked':''}></label><button id="saveSettings">Guardar configuración</button><hr><h2>⚙️ Administración de clientes</h2><p class="muted">Editar o eliminar definitivamente un cliente y sus movimientos. Solo administrador.</p><label>Buscar cliente<input id="adminSearch" placeholder="Nombre o teléfono"></label><div id="adminList"></div>`;
@@ -64,6 +75,48 @@ function editClient(id){const c=clients.find(x=>x.id===id);if(!c)return;const dl
 async function deleteClient(id){const c=clients.find(x=>x.id===id);if(!c)return;const count=moves.filter(m=>m.cliente_id===id).length;if(!confirm(`ELIMINACIÓN DEFINITIVA\n\nCliente: ${c.nombre}\nSaldo: ${money(balances.get(id))}\nMovimientos: ${count}\n\nSe eliminará todo su historial. ¿Continuar?`))return;const typed=prompt(`Para confirmar, escribe exactamente ELIMINAR:`);if(typed!=='ELIMINAR'){msg('Eliminación cancelada');return}await action(async()=>{const {error}=await db.rpc('admin_eliminar_cliente',{p_id:id});if(error)throw error;await refresh();msg('Cliente y movimientos eliminados',true)})}
 function historyView(){if(!isAdmin()&&!operatorSettings.historial){currentView='clients';clientsView();return}const v=$('view');v.innerHTML=`<h2>Historial por cliente</h2><label>Seleccionar cliente<select id="histClient"><option value="">Selecciona un cliente</option>${clientOptions()}</select></label><p class="muted">Se conservan todos los movimientos, incluso cuando la deuda queda en cero.</p>`;$('histClient').onchange=()=>{if($('histClient').value)openClient($('histClient').value)}}
 function cancelDialog(id){const c=clients.find(x=>x.id===id),balance=balances.get(id)||0;if(balance<=0){msg('El cliente no tiene deuda');return}const dlg=document.createElement('dialog');dlg.innerHTML=`<h2>Cancelar deuda total</h2><p>${esc(c.nombre)}</p><div class="bigmoney">${money(balance)}</div><p class="muted">Se registrará un pago por el saldo exacto. El historial se conservará.</p><div class="bar"><button id="confirmCancel">CONFIRMAR PAGO TOTAL</button><button class="light" id="closeCancel">Volver</button></div>`;document.body.appendChild(dlg);dlg.showModal();dlg.querySelector('#closeCancel').onclick=()=>dlg.close();dlg.onclose=()=>dlg.remove();dlg.querySelector('#confirmCancel').onclick=async()=>{dlg.close();await record({id,type:'CANCELACION',amount:null,medio:'EFECTIVO',detalle:'Cancelación total'})}}
-async function exportPdf(c,rows,balance){try{if(!window.jspdf)throw Error('No se cargó el generador PDF. Revisa tu conexión.');const doc=new window.jspdf.jsPDF({unit:'mm',format:'a5',orientation:'portrait'});let y=13;const line=(s,size=10)=>{doc.setFontSize(size);const parts=doc.splitTextToSize(String(s),127);for(const part of parts){if(y>194){doc.addPage();y=13}doc.text(part,10,y);y+=size*.5+2}};line('BODEGA LA ABUELITA',15);line('ESTADO DE CUENTA',12);line('Cliente: '+c.nombre);line('Emitido: '+new Date().toLocaleString('es-PE'));line('----------------------------------------------');let running=0;for(const m of rows){running+=m.tipo==='CREDITO'?Number(m.monto):-Number(m.monto);line(new Date(m.fecha).toLocaleDateString('es-PE')+'  '+m.tipo+'  '+(m.tipo==='CREDITO'?'+':'-')+money(m.monto));line('Saldo: '+money(running),8);if(m.detalle)line('Detalle: '+m.detalle,8)}line('----------------------------------------------');line('SALDO PENDIENTE: '+money(balance),13);line('Documento informativo de movimientos registrados.',8);const blob=doc.output('blob'),file=new File([blob],'estado_cuenta_'+c.nombre.replace(/[^a-z0-9]/gi,'_')+'.pdf',{type:'application/pdf'});if(navigator.canShare?.({files:[file]})&&confirm('¿Compartir el PDF? Aceptar para compartir, Cancelar para descargar.'))await navigator.share({files:[file],title:'Estado de cuenta - La Abuelita'});else doc.save(file.name)}catch(e){msg(e.message)}}
+async function exportPdf(c,rows,balance){
+ try{
+  if(!window.jspdf)throw Error('No se cargó el generador PDF. Revisa tu conexión.');
+  const W=80,margin=5,contentW=W-2*margin,prepared=[];
+  const tmp=new window.jspdf.jsPDF({unit:'mm',format:[80,200]});
+  const add=(text,size=9,bold=false,align='left')=>{tmp.setFont('helvetica',bold?'bold':'normal');tmp.setFontSize(size);const parts=tmp.splitTextToSize(String(text),contentW);prepared.push({parts,size,bold,align});};
+  add('LA ABUELITA',15,true,'center');add('ESTADO DE CUENTA',11,true,'center');add('Emitido: '+new Date().toLocaleString('es-PE'),8,false,'center');add('----------------------------------',8);
+  add('Cliente: '+c.nombre,10,true);add('----------------------------------',8);
+  let totalCredit=0,totalPayments=0;
+  for(const m of rows){
+   const credit=m.tipo==='CREDITO',amount=Number(m.monto)||0;
+   if(credit)totalCredit+=amount;else totalPayments+=amount;
+   add((credit?'COMPRA':'ABONO')+' - '+new Date(m.fecha).toLocaleString('es-PE'),9,true);
+   if(credit){for(const item of saleLines(m.detalle))add(item.name+(item.price===null?'':'  '+money(item.price)),9);}
+   else if(m.detalle)add(m.detalle,8);
+   add((credit?'Total compra: ':'Abono: ')+(credit?'':'- ')+money(amount),9,true);
+   add('----------------------------------',8);
+  }
+  add('Total compras: '+money(totalCredit),9);
+  add('Total abonos: '+money(totalPayments),9);
+  add('SALDO PENDIENTE',11,true,'center');add(money(balance),16,true,'center');
+  add('Gracias por su preferencia',8,false,'center');
+  const heightOf=r=>r.parts.length*(r.size*.44+1.8)+1;
+  const totalH=10+prepared.reduce((sum,r)=>sum+heightOf(r),0)+7;
+  // Un ticket ajustado a su contenido; si es muy largo, continúa en otra página.
+  const pageH=Math.max(45,Math.min(900,Math.ceil(totalH)));
+  const doc=new window.jspdf.jsPDF({unit:'mm',format:[W,pageH],orientation:'portrait'});
+  let y=7;
+  for(const r of prepared){
+   const h=heightOf(r);
+   if(y+h>pageH-5){doc.addPage([W,pageH],'portrait');y=7;}
+   doc.setFont('helvetica',r.bold?'bold':'normal');doc.setFontSize(r.size);
+   for(const part of r.parts){
+    doc.text(part,r.align==='center'?W/2:margin,y,{align:r.align});
+    y+=r.size*.44+1.8;
+   }
+   y+=1;
+  }
+  const blob=doc.output('blob'),file=new File([blob],'estado_cuenta_'+c.nombre.replace(/[^a-z0-9]/gi,'_')+'.pdf',{type:'application/pdf'});
+  if(navigator.canShare?.({files:[file]})&&confirm('¿Compartir el PDF? Aceptar para compartir, Cancelar para descargar.'))await navigator.share({files:[file],title:'Estado de cuenta - La Abuelita'});
+  else doc.save(file.name);
+ }catch(e){msg(e.message)}
+}
 async function action(fn){if(busy)return;busy=true;document.querySelectorAll('button').forEach(b=>b.disabled=true);try{await fn()}catch(e){msg(e.message||String(e))}finally{busy=false, operatorSettings={busqueda_clientes:true,historial:true};document.querySelectorAll('button').forEach(b=>b.disabled=false)}}
 init().catch(e=>msg(e.message));
